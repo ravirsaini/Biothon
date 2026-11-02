@@ -201,7 +201,6 @@ export default async function ModulePage({
           </Link>
         ) : null}
       </nav>
-
     </div>
   )
 }

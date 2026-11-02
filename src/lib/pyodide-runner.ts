@@ -1,76 +1,48 @@
-const INDEX_URL = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
-const SCRIPT_URL = `${INDEX_URL}pyodide.js`;
+const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/"
 
-type PyProxyLike = {
-  toString: () => string;
-  destroy?: () => void;
-};
+type PyFunction = ((...args: unknown[]) => unknown) & { destroy(): void }
 
-type PyodideRuntime = {
-  loadPackage: (name: string | string[]) => Promise<unknown>;
-  loadPackagesFromImports: (
+type Pyodide = {
+  loadPackage(names: string | string[]): Promise<unknown>
+  loadPackagesFromImports(
     code: string,
-    options?: {
-      messageCallback?: (message: string) => void;
-      errorCallback?: (message: string) => void;
-    },
-  ) => Promise<unknown>;
-  runPythonAsync: (code: string) => Promise<unknown>;
-  globals: {
-    set: (key: string, value: unknown) => void;
-  };
-};
-
-type LoadPyodide = (options?: { indexURL?: string }) => Promise<PyodideRuntime>;
+    options?: { messageCallback?: (message: string) => void },
+  ): Promise<unknown>
+  runPython(code: string): unknown
+  globals: { get(name: string): PyFunction }
+}
 
 declare global {
   interface Window {
-    loadPyodide?: LoadPyodide;
+    loadPyodide?: (options: { indexURL: string }) => Promise<Pyodide>
   }
 }
 
 export type PythonRun = {
-  stdout: string;
-  stderr: string;
-  ok: boolean;
-  images: string[];
-};
+  stdout: string
+  stderr: string
+  ok: boolean
+  images: string[]
+}
 
-const MATPLOTLIB_SETUP = `
-import matplotlib
-matplotlib.use("Agg", force=True)
-import matplotlib.pyplot as plt
+// Runs user code with stdout/stderr swapped for buffers, then saves every open
+// matplotlib figure as a base64 PNG. The result comes back as one JSON string.
+const HARNESS = `
+import base64, json, sys, traceback, warnings
+from io import BytesIO, StringIO
 
-def __atrium_show(*args, **kwargs):
-    return None
-
-plt.show = __atrium_show
-`;
-
-const RUNNER = `
-import json
-import sys
-from io import StringIO
-
-def __atrium_collect_figures():
+def _figures():
     if "matplotlib.pyplot" not in sys.modules:
         return []
-    import base64
-    from io import BytesIO
     import matplotlib.pyplot as plt
-
     images = []
-    for num in list(plt.get_fignums()):
+    for num in plt.get_fignums():
         fig = plt.figure(num)
         buf = BytesIO()
         try:
-            import warnings
             with warnings.catch_warnings():
-                # Matplotlib 3.10 warns on every Agg text draw. The coordinates are already integers.
-                warnings.filterwarnings(
-                    "ignore",
-                    message=r"The [xy] parameter as float was deprecated",
-                )
+                # Matplotlib 3.10 warns on every Agg text draw even though the coordinates are ints.
+                warnings.filterwarnings("ignore", message=r"The [xy] parameter as float was deprecated")
                 fig.savefig(buf, format="png", facecolor="white")
             images.append(base64.b64encode(buf.getvalue()).decode("ascii"))
         except Exception as exc:
@@ -79,154 +51,112 @@ def __atrium_collect_figures():
             plt.close(fig)
     return images
 
-__atrium_stdout = StringIO()
-__atrium_stderr = StringIO()
-__atrium_prev_out = sys.stdout
-__atrium_prev_err = sys.stderr
-sys.stdout = __atrium_stdout
-sys.stderr = __atrium_stderr
-__atrium_ok = True
-__atrium_images = []
-try:
-    exec(__atrium_code, {"__name__": "__main__"})
-except BaseException:
-    import traceback
-    __atrium_type, __atrium_exc, __atrium_tb = sys.exc_info()
-    if __atrium_tb is not None:
-        __atrium_tb = __atrium_tb.tb_next
-    traceback.print_exception(__atrium_type, __atrium_exc, __atrium_tb, file=__atrium_stderr)
-    __atrium_ok = False
-finally:
+def _atrium_run(code):
+    out, err = StringIO(), StringIO()
+    ok, images = True, []
+    saved = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = out, err
     try:
-        __atrium_images = __atrium_collect_figures()
-    except Exception:
-        import traceback
-        traceback.print_exc(file=__atrium_stderr)
-    sys.stdout = __atrium_prev_out
-    sys.stderr = __atrium_prev_err
+        exec(code, {"__name__": "__main__"})
+    except BaseException:
+        kind, exc, tb = sys.exc_info()
+        # Skip this frame so the traceback starts at the user's code.
+        traceback.print_exception(kind, exc, tb.tb_next if tb else None, file=err)
+        ok = False
+    finally:
+        try:
+            images = _figures()
+        except Exception:
+            traceback.print_exc(file=err)
+        sys.stdout, sys.stderr = saved
+    return json.dumps({"stdout": out.getvalue(), "stderr": err.getvalue(), "ok": ok, "images": images})
+`
 
-json.dumps({
-    "stdout": __atrium_stdout.getvalue(),
-    "stderr": __atrium_stderr.getvalue(),
-    "ok": __atrium_ok,
-    "images": __atrium_images,
-})
-`;
+// No display in the browser: draw off-screen and let the harness collect figures.
+const MATPLOTLIB_SETUP = `
+import matplotlib
+matplotlib.use("Agg", force=True)
+import matplotlib.pyplot as plt
+plt.show = lambda *args, **kwargs: None
+`
 
-let runtime: Promise<PyodideRuntime> | null = null;
-let queue: Promise<unknown> = Promise.resolve();
+let pyodide: Promise<Pyodide> | null = null
+let matplotlibReady = false
+let queue: Promise<unknown> = Promise.resolve()
 
-function usesMatplotlib(code: string): boolean {
-  return /^\s*(?:import\s+matplotlib\b|from\s+matplotlib\b)/m.test(code);
+function imports(code: string, name: string) {
+  return new RegExp(`^\\s*(?:import|from)\\s+${name}\\b`, "m").test(code)
 }
 
-function usesSklearn(code: string): boolean {
-  return /^\s*(?:import\s+sklearn\b|from\s+sklearn\b)/m.test(code);
+function loadScript() {
+  if (window.loadPyodide) return Promise.resolve()
+  return new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script")
+    script.src = `${PYODIDE_URL}pyodide.js`
+    script.async = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error("Could not load Pyodide from the CDN."))
+    document.head.appendChild(script)
+  })
 }
 
-function pngSources(images: unknown): string[] {
-  if (!Array.isArray(images)) return [];
-  return images
-    .filter((item): item is string => typeof item === "string" && /^[A-Za-z0-9+/=]+$/.test(item))
-    .slice(0, 6)
-    .map((item) => `data:image/png;base64,${item}`);
+function loadPyodide() {
+  pyodide ??= loadScript()
+    .then(() => {
+      if (!window.loadPyodide) throw new Error("Pyodide did not start.")
+      return window.loadPyodide({ indexURL: PYODIDE_URL })
+    })
+    .then((py) => {
+      py.runPython(HARNESS)
+      return py
+    })
+    .catch((error) => {
+      pyodide = null
+      throw error
+    })
+  return pyodide
 }
 
-function asString(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object" && "toString" in value) {
-    const proxy = value as PyProxyLike;
-    const text = proxy.toString();
-    proxy.destroy?.();
-    return text;
-  }
-  return String(value);
-}
+async function execute(code: string, onStatus: (message: string) => void): Promise<PythonRun> {
+  onStatus("Loading Python from the CDN…")
+  const py = await loadPyodide()
 
-function injectScript(): Promise<void> {
-  if (typeof window === "undefined") {
-    return Promise.reject(new Error("Python runs in the browser."));
-  }
-  if (window.loadPyodide) return Promise.resolve();
-
-  return new Promise((resolve, reject) => {
-    const fail = () => reject(new Error("Could not load Pyodide from the CDN."));
-    const existing = document.querySelector<HTMLScriptElement>(`script[data-pyodide="true"]`);
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", fail, { once: true });
-      return;
+  onStatus("Loading packages…")
+  await py.loadPackagesFromImports(code, { messageCallback: onStatus })
+  if (imports(code, "matplotlib")) {
+    onStatus("Loading matplotlib…")
+    await py.loadPackage("matplotlib")
+    if (!matplotlibReady) {
+      onStatus("Preparing matplotlib…")
+      py.runPython(MATPLOTLIB_SETUP)
+      matplotlibReady = true
     }
-    const script = document.createElement("script");
-    script.src = SCRIPT_URL;
-    script.async = true;
-    script.dataset.pyodide = "true";
-    script.onload = () => resolve();
-    script.onerror = fail;
-    document.head.appendChild(script);
-  });
-}
+  }
+  if (imports(code, "sklearn")) {
+    onStatus("Loading scikit-learn…")
+    await py.loadPackage("scikit-learn")
+  }
 
-export function loadPyodideRuntime(): Promise<PyodideRuntime> {
-  if (!runtime) {
-    runtime = (async () => {
-      await injectScript();
-      if (!window.loadPyodide) {
-        throw new Error("Pyodide did not start.");
-      }
-      return window.loadPyodide({ indexURL: INDEX_URL });
-    })();
-    runtime.catch(() => {
-      runtime = null;
-    });
-  }
-  return runtime;
-}
-
-async function execute(
-  code: string,
-  onStatus?: (message: string) => void,
-): Promise<PythonRun> {
-  onStatus?.("Loading Python from the CDN…");
-  const pyodide = await loadPyodideRuntime();
-  onStatus?.("Loading packages…");
-  await pyodide.loadPackagesFromImports(code, {
-    messageCallback: (message) => onStatus?.(message),
-  });
-  if (usesMatplotlib(code)) {
-    onStatus?.("Loading matplotlib…");
-    await pyodide.loadPackage("matplotlib");
-    onStatus?.("Preparing matplotlib…");
-    await pyodide.runPythonAsync(MATPLOTLIB_SETUP);
-  }
-  if (usesSklearn(code)) {
-    onStatus?.("Loading scikit-learn…");
-    await pyodide.loadPackage("scikit-learn");
-  }
-  onStatus?.("Running…");
-  pyodide.globals.set("__atrium_code", code);
+  onStatus("Running…")
+  const run = py.globals.get("_atrium_run")
   try {
-    const raw = await pyodide.runPythonAsync(RUNNER);
-    const parsed = JSON.parse(asString(raw)) as PythonRun;
+    const result = JSON.parse(String(run(code))) as Partial<PythonRun>
     return {
-      stdout: parsed.stdout ?? "",
-      stderr: parsed.stderr ?? "",
-      ok: Boolean(parsed.ok),
-      images: pngSources(parsed.images),
-    };
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+      ok: Boolean(result.ok),
+      images: (result.images ?? [])
+        .slice(0, 6)
+        .map((png) => `data:image/png;base64,${png}`),
+    }
   } finally {
-    pyodide.globals.set("__atrium_code", "");
+    run.destroy()
   }
 }
 
-export function runPython(
-  code: string,
-  onStatus?: (message: string) => void,
-): Promise<PythonRun> {
-  const job = queue.then(() => execute(code, onStatus));
-  queue = job.then(
-    () => undefined,
-    () => undefined,
-  );
-  return job;
+// One interpreter per page, so runs are queued rather than interleaved.
+export function runPython(code: string, onStatus: (message: string) => void = () => {}) {
+  const job = queue.then(() => execute(code, onStatus))
+  queue = job.catch(() => {})
+  return job
 }

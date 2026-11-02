@@ -1,85 +1,54 @@
 "use client"
 
-import { useCallback, useState, useSyncExternalStore, type KeyboardEvent } from "react"
+import { useState, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
-import {
-  clearLessonDraft,
-  readLessonDraft,
-  subscribeLessonDraft,
-  writeLessonDraft,
-} from "@/lib/lesson-draft"
+import { useLessonDraft } from "@/lib/lesson-store"
 import { runPython, type PythonRun } from "@/lib/pyodide-runner"
 import { cn } from "cn"
 
-type RunView =
+type Status =
   | { phase: "idle" }
-  | { phase: "working"; message: string }
+  | { phase: "running"; message: string }
   | { phase: "done"; result: PythonRun }
-  | { phase: "failed"; message: string };
+  | { phase: "failed"; message: string }
 
 export function TryIt({
   lessonId,
   code,
-  onCompleted,
+  onComplete,
 }: {
-  lessonId: string;
-  code: string;
-  onCompleted: () => void;
+  lessonId: string
+  code: string
+  onComplete: () => void
 }) {
-  const subscribe = useCallback(
-    (onChange: () => void) => subscribeLessonDraft(lessonId, onChange),
-    [lessonId],
-  );
-  const source = useSyncExternalStore(
-    subscribe,
-    () => readLessonDraft(lessonId, code),
-    () => code,
-  );
-  const [view, setView] = useState<RunView>({ phase: "idle" });
-  const busy = view.phase === "working";
-  const unchanged = source === code;
-
-  function update(next: string) {
-    writeLessonDraft(lessonId, next);
-  }
-
-  function reset() {
-    clearLessonDraft(lessonId);
-  }
+  const [source, save, reset] = useLessonDraft(lessonId, code)
+  const [status, setStatus] = useState<Status>({ phase: "idle" })
+  const running = status.phase === "running"
 
   async function run() {
-    setView({ phase: "working", message: "Loading Python from the CDN…" });
+    setStatus({ phase: "running", message: "Loading Python from the CDN…" })
     try {
-      const result = await runPython(source, (message) => {
-        setView({ phase: "working", message });
-      });
-      setView({ phase: "done", result });
+      const result = await runPython(source, (message) => setStatus({ phase: "running", message }))
+      setStatus({ phase: "done", result })
     } catch (error) {
-      setView({
+      setStatus({
         phase: "failed",
         message: error instanceof Error ? error.message : "Python failed to start.",
-      });
+      })
     }
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Tab") {
-      event.preventDefault();
-      const el = event.currentTarget;
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      const next = `${source.slice(0, start)}    ${source.slice(end)}`;
-      update(next);
-      requestAnimationFrame(() => {
-        el.selectionStart = start + 4;
-        el.selectionEnd = start + 4;
-      });
-      return;
-    }
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      event.preventDefault();
-      if (!busy) void run();
+      event.preventDefault()
+      const el = event.currentTarget
+      const { selectionStart: start, selectionEnd: end } = el
+      save(`${source.slice(0, start)}    ${source.slice(end)}`)
+      requestAnimationFrame(() => el.setSelectionRange(start + 4, start + 4))
+    } else if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault()
+      if (!running) run()
     }
   }
 
@@ -91,27 +60,27 @@ export function TryIt({
           <Button
             type="button"
             onClick={reset}
-            disabled={busy || unchanged}
+            disabled={running || source === code}
             className="h-8 bg-transparent px-2.5 text-xs text-white hover:bg-white/15"
           >
             Reset to Default
           </Button>
           <Button
             type="button"
-            onClick={onCompleted}
-            disabled={busy}
+            onClick={onComplete}
+            disabled={running}
             className="h-8 bg-white/15 px-2.5 text-xs text-white hover:bg-white/25"
           >
             Mark as Completed
           </Button>
           <Button
             type="button"
-            onClick={() => void run()}
-            disabled={busy}
-            aria-busy={busy}
+            onClick={run}
+            disabled={running}
+            aria-busy={running}
             className="h-8 bg-white px-3 text-[#1f6b45] hover:bg-white/90"
           >
-            {busy ? "Running…" : "Run"}
+            {running ? "Running…" : "Run"}
           </Button>
         </div>
       </div>
@@ -120,7 +89,7 @@ export function TryIt({
           <span className="sr-only">Python code</span>
           <textarea
             value={source}
-            onChange={(event) => update(event.target.value)}
+            onChange={(event) => save(event.target.value)}
             onKeyDown={onKeyDown}
             spellCheck={false}
             wrap="off"
@@ -131,29 +100,35 @@ export function TryIt({
           />
         </label>
         <div className="flex min-h-80 min-w-0 flex-col">
-          <Terminal view={view} />
-          <Plots view={view} />
+          <Terminal status={status} />
+          <Plots status={status} />
         </div>
       </div>
     </div>
-  );
+  )
 }
 
-function Terminal({ view }: { view: RunView }) {
-  const failed = view.phase === "failed" || (view.phase === "done" && !view.result.ok);
-  let stdout = "";
-  let stderr = "";
-  let note = "Run the code to see print output here.";
-
-  if (view.phase === "working") note = view.message;
-  if (view.phase === "failed") note = view.message;
-  if (view.phase === "done") {
-    stdout = view.result.stdout;
-    stderr = view.result.stderr;
-    if (!stdout && !stderr) {
-      note = view.result.images.length > 0 ? "No printed output." : "(no output)";
-    } else note = "";
+function terminalNote(status: Status) {
+  switch (status.phase) {
+    case "idle":
+      return "Run the code to see print output here."
+    case "running":
+    case "failed":
+      return status.message
+    case "done": {
+      const { stdout, stderr, images } = status.result
+      if (stdout || stderr) return ""
+      return images.length > 0 ? "No printed output." : "(no output)"
+    }
   }
+}
+
+function Terminal({ status }: { status: Status }) {
+  const result = status.phase === "done" ? status.result : null
+  const failed = status.phase === "failed" || result?.ok === false
+  const note = terminalNote(status)
+  const stdout = result?.stdout ?? ""
+  const stderr = result?.stderr ?? ""
 
   return (
     <div className="flex min-h-32 flex-1 flex-col bg-[#142421]" aria-live="polite">
@@ -168,18 +143,17 @@ function Terminal({ view }: { view: RunView }) {
           failed ? "text-[#e29478]" : "text-[#d7ebe3]",
         )}
       >
-        {note ? <span className={failed ? undefined : "text-[#8ea199]"}>{note}</span> : null}
-        {stdout ? <span className="text-[#d7ebe3]">{stdout}</span> : null}
-        {stdout && stderr && !stdout.endsWith("\n") ? "\n" : null}
-        {stderr ? <span className="text-[#e29478]">{stderr}</span> : null}
+        {note && <span className={failed ? undefined : "text-[#8ea199]"}>{note}</span>}
+        {stdout && <span className="text-[#d7ebe3]">{stdout}</span>}
+        {stdout && stderr && !stdout.endsWith("\n") && "\n"}
+        {stderr && <span className="text-[#e29478]">{stderr}</span>}
       </pre>
     </div>
-  );
+  )
 }
 
-function Plots({ view }: { view: RunView }) {
-  const images = view.phase === "done" ? view.result.images : [];
-  const waiting = view.phase === "working";
+function Plots({ status }: { status: Status }) {
+  const images = status.phase === "done" ? status.result.images : []
 
   return (
     <div className="border-t border-[#0c1614] bg-[#f7f4ec]" aria-label="Plots">
@@ -188,15 +162,17 @@ function Plots({ view }: { view: RunView }) {
       </p>
       {images.length === 0 ? (
         <p className="px-4 pt-1 pb-3 text-xs leading-5 text-muted-foreground">
-          {waiting ? "Waiting for figures…" : "Plots appear here when the code draws a figure."}
+          {status.phase === "running"
+            ? "Waiting for figures…"
+            : "Plots appear here when the code draws a figure."}
         </p>
       ) : (
         <div className="flex flex-col gap-3 px-4 py-3">
           {images.map((src, index) => (
-            // Data-URL PNGs from the in-browser runtime. next/image cannot optimize them.
+            // next/image can't optimize data URLs.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              key={`${index}-${src.slice(-24)}`}
+              key={index}
               src={src}
               alt={`Plot ${index + 1}`}
               className="h-auto w-full rounded-md border border-border bg-white"
@@ -205,5 +181,5 @@ function Plots({ view }: { view: RunView }) {
         </div>
       )}
     </div>
-  );
+  )
 }
