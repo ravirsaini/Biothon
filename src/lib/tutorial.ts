@@ -30,6 +30,29 @@ print(labs)`,
       "Keep only the lactate rows and print those results.",
   },
   {
+    id: "plotting-biomarkers",
+    title: "Plotting Biomarkers",
+    summary:
+      "A histogram shows the shape of one lab. Matplotlib draws it from a list of numbers, and the figure stays next to the printed text.",
+    example: "Plot a histogram of synthetic patient lactate levels.",
+    code: `import matplotlib.pyplot as plt
+
+# Synthetic results, mmol/L. Not a patient record.
+lactate = [0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2.0, 2.2, 2.6, 3.4, 4.1, 5.0]
+print(len(lactate), "synthetic lactate results")
+
+plt.figure(figsize=(6, 3.6))
+plt.hist(lactate, bins=6, color="#1f6b45", edgecolor="#142421")
+plt.xlabel("Lactate (mmol/L)")
+plt.ylabel("Patients")
+plt.title("Synthetic lactate levels")
+plt.tight_layout()
+plt.show()`,
+    exercise:
+      "Add a vertical line at 2 mmol/L with plt.axvline, and print how many of these results sit above that line.",
+    note: "Synthetic values for practice. Not a patient panel and not a clinical cutoff.",
+  },
+  {
     id: "biopython-basics",
     title: "Biopython Basics",
     summary:

@@ -81,7 +81,10 @@ export function TryIt({ code }: { code: string }) {
             className="min-h-80 w-full resize-y overflow-auto bg-[#f7f4ec] px-4 py-4 font-mono text-[13px] leading-6 whitespace-pre text-foreground outline-none"
           />
         </label>
-        <Terminal view={view} />
+        <div className="flex min-h-80 min-w-0 flex-col">
+          <Terminal view={view} />
+          <Plots view={view} />
+        </div>
       </div>
     </div>
   );
@@ -98,12 +101,13 @@ function Terminal({ view }: { view: RunView }) {
   if (view.phase === "done") {
     stdout = view.result.stdout;
     stderr = view.result.stderr;
-    if (!stdout && !stderr) note = "(no output)";
-    else note = "";
+    if (!stdout && !stderr) {
+      note = view.result.images.length > 0 ? "No printed output." : "(no output)";
+    } else note = "";
   }
 
   return (
-    <div className="flex min-h-80 flex-col bg-[#142421]" aria-live="polite">
+    <div className="flex min-h-32 flex-1 flex-col bg-[#142421]" aria-live="polite">
       <p className="px-4 pt-3 font-mono text-[11px] tracking-[0.14em] text-[#8ea199] uppercase">
         Terminal
       </p>
@@ -120,6 +124,37 @@ function Terminal({ view }: { view: RunView }) {
         {stdout && stderr && !stdout.endsWith("\n") ? "\n" : null}
         {stderr ? <span className="text-[#e29478]">{stderr}</span> : null}
       </pre>
+    </div>
+  );
+}
+
+function Plots({ view }: { view: RunView }) {
+  const images = view.phase === "done" ? view.result.images : [];
+  const waiting = view.phase === "working";
+
+  return (
+    <div className="border-t border-[#0c1614] bg-[#f7f4ec]" aria-label="Plots">
+      <p className="px-4 pt-3 font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
+        Plots
+      </p>
+      {images.length === 0 ? (
+        <p className="px-4 pt-1 pb-3 text-xs leading-5 text-muted-foreground">
+          {waiting ? "Waiting for figures…" : "Plots appear here when the code draws a figure."}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3 px-4 py-3">
+          {images.map((src, index) => (
+            // Data-URL PNGs from the in-browser runtime. next/image cannot optimize them.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={`${index}-${src.slice(-24)}`}
+              src={src}
+              alt={`Plot ${index + 1}`}
+              className="h-auto w-full rounded-md border border-border bg-white"
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

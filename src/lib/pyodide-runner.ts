@@ -7,6 +7,7 @@ type PyProxyLike = {
 };
 
 type PyodideRuntime = {
+  loadPackage: (name: string | string[]) => Promise<unknown>;
   loadPackagesFromImports: (
     code: string,
     options?: {
@@ -32,12 +33,51 @@ export type PythonRun = {
   stdout: string;
   stderr: string;
   ok: boolean;
+  images: string[];
 };
+
+const MATPLOTLIB_SETUP = `
+import matplotlib
+matplotlib.use("Agg", force=True)
+import matplotlib.pyplot as plt
+
+def __atrium_show(*args, **kwargs):
+    return None
+
+plt.show = __atrium_show
+`;
 
 const RUNNER = `
 import json
 import sys
 from io import StringIO
+
+def __atrium_collect_figures():
+    if "matplotlib.pyplot" not in sys.modules:
+        return []
+    import base64
+    from io import BytesIO
+    import matplotlib.pyplot as plt
+
+    images = []
+    for num in list(plt.get_fignums()):
+        fig = plt.figure(num)
+        buf = BytesIO()
+        try:
+            import warnings
+            with warnings.catch_warnings():
+                # Matplotlib 3.10 warns on every Agg text draw. The coordinates are already integers.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"The [xy] parameter as float was deprecated",
+                )
+                fig.savefig(buf, format="png", facecolor="white")
+            images.append(base64.b64encode(buf.getvalue()).decode("ascii"))
+        except Exception as exc:
+            print(f"Could not save figure: {exc}", file=sys.stderr)
+        finally:
+            plt.close(fig)
+    return images
 
 __atrium_stdout = StringIO()
 __atrium_stderr = StringIO()
@@ -46,6 +86,7 @@ __atrium_prev_err = sys.stderr
 sys.stdout = __atrium_stdout
 sys.stderr = __atrium_stderr
 __atrium_ok = True
+__atrium_images = []
 try:
     exec(__atrium_code, {"__name__": "__main__"})
 except BaseException:
@@ -56,6 +97,11 @@ except BaseException:
     traceback.print_exception(__atrium_type, __atrium_exc, __atrium_tb, file=__atrium_stderr)
     __atrium_ok = False
 finally:
+    try:
+        __atrium_images = __atrium_collect_figures()
+    except Exception:
+        import traceback
+        traceback.print_exc(file=__atrium_stderr)
     sys.stdout = __atrium_prev_out
     sys.stderr = __atrium_prev_err
 
@@ -63,11 +109,24 @@ json.dumps({
     "stdout": __atrium_stdout.getvalue(),
     "stderr": __atrium_stderr.getvalue(),
     "ok": __atrium_ok,
+    "images": __atrium_images,
 })
 `;
 
 let runtime: Promise<PyodideRuntime> | null = null;
 let queue: Promise<unknown> = Promise.resolve();
+
+function usesMatplotlib(code: string): boolean {
+  return /^\s*(?:import\s+matplotlib\b|from\s+matplotlib\b)/m.test(code);
+}
+
+function pngSources(images: unknown): string[] {
+  if (!Array.isArray(images)) return [];
+  return images
+    .filter((item): item is string => typeof item === "string" && /^[A-Za-z0-9+/=]+$/.test(item))
+    .slice(0, 6)
+    .map((item) => `data:image/png;base64,${item}`);
+}
 
 function asString(value: unknown): string {
   if (typeof value === "string") return value;
@@ -130,6 +189,12 @@ async function execute(
   await pyodide.loadPackagesFromImports(code, {
     messageCallback: (message) => onStatus?.(message),
   });
+  if (usesMatplotlib(code)) {
+    onStatus?.("Loading matplotlib…");
+    await pyodide.loadPackage("matplotlib");
+    onStatus?.("Preparing matplotlib…");
+    await pyodide.runPythonAsync(MATPLOTLIB_SETUP);
+  }
   onStatus?.("Running…");
   pyodide.globals.set("__atrium_code", code);
   try {
@@ -139,6 +204,7 @@ async function execute(
       stdout: parsed.stdout ?? "",
       stderr: parsed.stderr ?? "",
       ok: Boolean(parsed.ok),
+      images: pngSources(parsed.images),
     };
   } finally {
     pyodide.globals.set("__atrium_code", "");
