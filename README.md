@@ -16,13 +16,15 @@ Open [http://localhost:3847](http://localhost:3847).
 ## Pages
 
 - `/` — welcome, the lesson on the desk, and the path
-- `/modules` — a tutorial bench: topic menu, a highlighted example, and a Try it Yourself placeholder
+- `/modules` — a tutorial bench: topic menu, a highlighted example, and a Try it Yourself editor that runs Python in the browser
 - `/modules/[slug]` — lessons, a notebook prompt, and what “done” means
 - `/dashboard` — stat tiles, sample charts, and an open slot for the next figure
 
 ## Stack
 
 Next.js, TypeScript, Tailwind CSS, and shadcn/ui. Sample chart data lives in `src/lib/cohort.ts`. The syllabus lives in `src/lib/curriculum.ts`. The modules page lessons live in `src/lib/tutorial.ts`.
+
+Try it Yourself loads Pyodide from the jsDelivr CDN when you press Run. There is no Python server. The first run downloads the runtime, then any imported package such as pandas, and print output appears in the terminal pane. The browser needs network access to that CDN.
 
 ## Static export
 

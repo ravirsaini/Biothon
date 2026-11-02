@@ -3,6 +3,7 @@
 import { useState } from "react"
 
 import { PythonCode } from "@/components/python-code"
+import { TryIt } from "@/components/try-it"
 import { Button } from "@/components/ui/button"
 import { tutorialTopics } from "@/lib/tutorial"
 import { cn } from "cn"
@@ -11,11 +12,6 @@ export function LessonBench() {
   const [topicId, setTopicId] = useState(tutorialTopics[0].id)
   const [tried, setTried] = useState(false)
   const topic = tutorialTopics.find((item) => item.id === topicId) ?? tutorialTopics[0]
-
-  function selectTopic(id: string) {
-    setTopicId(id)
-    setTried(false)
-  }
 
   return (
     <div className="overflow-hidden rounded-md border border-border bg-card shadow-sm lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
@@ -30,7 +26,7 @@ export function LessonBench() {
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => selectTopic(item.id)}
+                  onClick={() => setTopicId(item.id)}
                   aria-current={active ? "page" : undefined}
                   className={cn(
                     "block w-full border-l-4 px-4 py-2.5 text-left text-sm transition-colors",
@@ -78,18 +74,10 @@ export function LessonBench() {
         </Button>
 
         {tried ? (
-          <div
-            className="mt-4 rounded-md border border-dashed border-border bg-muted/60 px-4 py-4"
-            role="status"
-          >
-            <p className="text-sm font-medium">Editor placeholder</p>
-            <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
-              Try it Yourself does not run Python in the browser. Copy the example into a notebook when you want to change it.
-            </p>
-          </div>
+          <TryIt key={topic.id} code={topic.code} />
         ) : (
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            The button is a placeholder for an exercise editor.
+            Opens an editor that runs this example in the browser. The first run downloads Python.
           </p>
         )}
 

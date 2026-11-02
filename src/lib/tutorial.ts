@@ -13,19 +13,21 @@ export const tutorialTopics: TutorialTopic[] = [
     id: "pandas-for-ehr",
     title: "Pandas for EHR",
     summary:
-      "An encounter table is a set of rows. Pandas lets you keep the stays that match a question and leave the rest of the extract alone.",
-    example:
-      "Load a small encounters file, keep stays longer than a week, and count them by admitting unit.",
+      "A lab panel is a table of rows. Pandas lets you build that table in the browser and print the results you want to read.",
+    example: "Create a small table of patient lab results and print it.",
     code: `import pandas as pd
 
-encounters = pd.read_csv("encounters.csv")
-long_stays = encounters.loc[
-    encounters["los_days"] > 7,
-    ["encounter_id", "unit", "los_days"],
-]
-print(long_stays.groupby("unit").size())`,
+labs = pd.DataFrame(
+    {
+        "patient_id": ["P-1042", "P-1048", "P-1103", "P-1117"],
+        "assay": ["sodium", "potassium", "lactate", "lactate"],
+        "result": [138.0, 4.1, 1.6, 4.8],
+        "unit": ["mmol/L", "mmol/L", "mmol/L", "mmol/L"],
+    }
+)
+print(labs)`,
     exercise:
-      "Add a filter so only the rows from one unit remain, and print how many of those stays are longer than 7 days.",
+      "Keep only the lactate rows and print those results.",
   },
   {
     id: "biopython-basics",
