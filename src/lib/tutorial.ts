@@ -87,6 +87,39 @@ print(round(model.score(X, y), 2))`,
     note: "Practice rows only. This is not a diagnostic score and not a reason to change anyone's care.",
   },
   {
+    id: "scikit-learn-diagnostics",
+    title: "Scikit-learn Diagnostics",
+    summary:
+      "A forest of trees can vote on a label. This lesson fits one on synthetic tumor features and prints the accuracy beside the confusion matrix.",
+    example:
+      "Generate a synthetic tumor dataset, train a random forest, and print the accuracy and confusion matrix.",
+    code: `from sklearn.datasets import make_classification
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.model_selection import train_test_split
+
+# Synthetic tumor features. Not a patient record and not a diagnosis.
+X, y = make_classification(
+    n_samples=120,
+    n_features=6,
+    n_informative=4,
+    n_redundant=0,
+    n_classes=2,
+    random_state=7,
+)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, random_state=7
+)
+forest = RandomForestClassifier(n_estimators=40, random_state=7)
+forest.fit(X_train, y_train)
+predicted = forest.predict(X_test)
+print("accuracy", round(accuracy_score(y_test, predicted), 2))
+print(confusion_matrix(y_test, predicted))`,
+    exercise:
+      "Lower n_estimators to 10, run it again, and note whether the off-diagonal counts in the matrix moved.",
+    note: "Practice rows only. A score on synthetic tumors is not a diagnosis and not a reason to change anyone's care.",
+  },
+  {
     id: "numpy-for-lab-panels",
     title: "NumPy for Lab Panels",
     summary:

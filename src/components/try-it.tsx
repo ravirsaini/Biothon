@@ -1,8 +1,14 @@
 "use client"
 
-import { useState, type KeyboardEvent } from "react"
+import { useCallback, useState, useSyncExternalStore, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
+import {
+  clearLessonDraft,
+  readLessonDraft,
+  subscribeLessonDraft,
+  writeLessonDraft,
+} from "@/lib/lesson-draft"
 import { runPython, type PythonRun } from "@/lib/pyodide-runner"
 import { cn } from "cn"
 
@@ -12,10 +18,27 @@ type RunView =
   | { phase: "done"; result: PythonRun }
   | { phase: "failed"; message: string };
 
-export function TryIt({ code }: { code: string }) {
-  const [source, setSource] = useState(code);
+export function TryIt({ lessonId, code }: { lessonId: string; code: string }) {
+  const subscribe = useCallback(
+    (onChange: () => void) => subscribeLessonDraft(lessonId, onChange),
+    [lessonId],
+  );
+  const source = useSyncExternalStore(
+    subscribe,
+    () => readLessonDraft(lessonId, code),
+    () => code,
+  );
   const [view, setView] = useState<RunView>({ phase: "idle" });
   const busy = view.phase === "working";
+  const unchanged = source === code;
+
+  function update(next: string) {
+    writeLessonDraft(lessonId, next);
+  }
+
+  function reset() {
+    clearLessonDraft(lessonId);
+  }
 
   async function run() {
     setView({ phase: "working", message: "Loading Python from the CDN…" });
@@ -39,7 +62,7 @@ export function TryIt({ code }: { code: string }) {
       const start = el.selectionStart;
       const end = el.selectionEnd;
       const next = `${source.slice(0, start)}    ${source.slice(end)}`;
-      setSource(next);
+      update(next);
       requestAnimationFrame(() => {
         el.selectionStart = start + 4;
         el.selectionEnd = start + 4;
@@ -54,24 +77,34 @@ export function TryIt({ code }: { code: string }) {
 
   return (
     <div className="mt-4 overflow-hidden rounded-md border border-[#0c1614]">
-      <div className="flex items-center justify-between gap-3 bg-[#1f6b45] px-3 py-2 text-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-[#1f6b45] px-3 py-2 text-white">
         <p className="text-sm font-medium">Try it Yourself</p>
-        <Button
-          type="button"
-          onClick={() => void run()}
-          disabled={busy}
-          aria-busy={busy}
-          className="h-8 bg-white px-3 text-[#1f6b45] hover:bg-white/90"
-        >
-          {busy ? "Running…" : "Run"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={reset}
+            disabled={busy || unchanged}
+            className="h-8 bg-transparent px-2.5 text-xs text-white hover:bg-white/15"
+          >
+            Reset to Default
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void run()}
+            disabled={busy}
+            aria-busy={busy}
+            className="h-8 bg-white px-3 text-[#1f6b45] hover:bg-white/90"
+          >
+            {busy ? "Running…" : "Run"}
+          </Button>
+        </div>
       </div>
       <div className="grid xl:grid-cols-2">
         <label className="block border-b border-border xl:border-r xl:border-b-0">
           <span className="sr-only">Python code</span>
           <textarea
             value={source}
-            onChange={(event) => setSource(event.target.value)}
+            onChange={(event) => update(event.target.value)}
             onKeyDown={onKeyDown}
             spellCheck={false}
             wrap="off"

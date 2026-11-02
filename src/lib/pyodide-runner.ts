@@ -120,6 +120,10 @@ function usesMatplotlib(code: string): boolean {
   return /^\s*(?:import\s+matplotlib\b|from\s+matplotlib\b)/m.test(code);
 }
 
+function usesSklearn(code: string): boolean {
+  return /^\s*(?:import\s+sklearn\b|from\s+sklearn\b)/m.test(code);
+}
+
 function pngSources(images: unknown): string[] {
   if (!Array.isArray(images)) return [];
   return images
@@ -194,6 +198,10 @@ async function execute(
     await pyodide.loadPackage("matplotlib");
     onStatus?.("Preparing matplotlib…");
     await pyodide.runPythonAsync(MATPLOTLIB_SETUP);
+  }
+  if (usesSklearn(code)) {
+    onStatus?.("Loading scikit-learn…");
+    await pyodide.loadPackage("scikit-learn");
   }
   onStatus?.("Running…");
   pyodide.globals.set("__atrium_code", code);

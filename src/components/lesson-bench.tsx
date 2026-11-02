@@ -74,7 +74,7 @@ export function LessonBench() {
         </Button>
 
         {tried ? (
-          <TryIt key={topic.id} code={topic.code} />
+          <TryIt key={topic.id} lessonId={topic.id} code={topic.code} />
         ) : (
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
             Opens an editor that runs this example in the browser. The first run downloads Python.
