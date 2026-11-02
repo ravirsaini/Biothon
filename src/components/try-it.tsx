@@ -18,7 +18,15 @@ type RunView =
   | { phase: "done"; result: PythonRun }
   | { phase: "failed"; message: string };
 
-export function TryIt({ lessonId, code }: { lessonId: string; code: string }) {
+export function TryIt({
+  lessonId,
+  code,
+  onCompleted,
+}: {
+  lessonId: string;
+  code: string;
+  onCompleted: () => void;
+}) {
   const subscribe = useCallback(
     (onChange: () => void) => subscribeLessonDraft(lessonId, onChange),
     [lessonId],
@@ -79,7 +87,7 @@ export function TryIt({ lessonId, code }: { lessonId: string; code: string }) {
     <div className="mt-4 overflow-hidden rounded-md border border-[#0c1614]">
       <div className="flex flex-wrap items-center justify-between gap-2 bg-[#1f6b45] px-3 py-2 text-white">
         <p className="text-sm font-medium">Try it Yourself</p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             type="button"
             onClick={reset}
@@ -87,6 +95,14 @@ export function TryIt({ lessonId, code }: { lessonId: string; code: string }) {
             className="h-8 bg-transparent px-2.5 text-xs text-white hover:bg-white/15"
           >
             Reset to Default
+          </Button>
+          <Button
+            type="button"
+            onClick={onCompleted}
+            disabled={busy}
+            className="h-8 bg-white/15 px-2.5 text-xs text-white hover:bg-white/25"
+          >
+            Mark as Completed
           </Button>
           <Button
             type="button"

@@ -24,7 +24,7 @@ Open [http://localhost:3847](http://localhost:3847).
 
 Next.js, TypeScript, Tailwind CSS, and shadcn/ui. Sample chart data lives in `src/lib/cohort.ts`. The syllabus lives in `src/lib/curriculum.ts`. The modules page lessons live in `src/lib/tutorial.ts`.
 
-Try it Yourself loads Pyodide from the jsDelivr CDN when you press Run. There is no Python server. The first run downloads the runtime, then any imported package such as pandas, matplotlib, or scikit-learn. Printed text appears in the terminal. A call to `plt.show()`, or any figure left open, is saved as a PNG and shown in the Plots area under that terminal. Edits are stored in the browser, one draft per lesson, and Reset to Default restores the example. The browser needs network access to that CDN.
+Try it Yourself loads Pyodide from the jsDelivr CDN when you press Run. There is no Python server. The first run downloads the runtime, then any imported package such as pandas, matplotlib, or scikit-learn. Printed text appears in the terminal. A call to `plt.show()`, or any figure left open, is saved as a PNG and shown in the Plots area under that terminal. Edits are stored in the browser, one draft per lesson, and Reset to Default restores the example. Mark as Completed stores that lesson and opens the next one. The bar at the top of Modules is the share of lessons with a checkmark. The browser needs network access to that CDN.
 
 ## Static export
 
