@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 
 function ShellFallback() {
   return (
-    <div className="flex min-h-dvh flex-1">
+    <div className="flex flex-1">
       <div className="hidden w-64 shrink-0 bg-sidebar md:block" />
       <div className="flex-1" />
     </div>
@@ -45,10 +45,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${sourceSans.variable} ${fraunces.variable} ${plex.variable} h-full antialiased`}
     >
-      <body className="min-h-full font-sans">
+      <body className="flex min-h-dvh flex-col font-sans">
         <Suspense fallback={<ShellFallback />}>
           <AppShell>{children}</AppShell>
         </Suspense>
+        <footer className="border-t border-border px-4 py-4">
+          <p className="text-center text-xs leading-5 font-normal tracking-wide text-muted-foreground">
+            Made by Dr. Ravi Saini, School of Biochemical Engineering, IIT-BHU, Varanasi
+          </p>
+        </footer>
       </body>
     </html>
   )

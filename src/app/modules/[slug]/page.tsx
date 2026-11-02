@@ -20,6 +20,8 @@ export function generateStaticParams() {
   return modules.map((mod) => ({ slug: mod.slug }))
 }
 
+export const dynamicParams = false
+
 export async function generateMetadata({
   params,
 }: {

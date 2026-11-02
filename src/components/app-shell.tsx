@@ -138,14 +138,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const section = nav.find((item) => item.match(pathname))?.label ?? "Atrium"
 
   return (
-    <div className="flex min-h-dvh">
+    <div className="flex flex-1">
       <a
         href="#content"
         className="absolute top-3 left-3 z-50 -translate-y-24 rounded-lg bg-card px-3 py-2 text-sm shadow ring-1 ring-foreground/10 focus:translate-y-0"
       >
         Skip to content
       </a>
-      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+      <aside className="sticky top-0 hidden h-[calc(100dvh-3.5rem)] w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
         <SidebarPanel />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
